@@ -271,13 +271,14 @@ func LikeUserHandler(db *sql.DB) http.HandlerFunc {
 		}
 
 		var isMatch bool
+		var matchID int
 		if err == sql.ErrNoRows {
 			// No existing match, create a new pending match
-			_, err = db.Exec(`
+			err = db.QueryRow(`
 				INSERT INTO matches (user_id_1, user_id_2, status)
 				VALUES ($1, $2, 'pending')
-				ON CONFLICT (user_id_1, user_id_2) DO NOTHING
-			`, userID, likedUserID)
+				RETURNING id
+			`, userID, likedUserID).Scan(&matchID)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -295,10 +296,28 @@ func LikeUserHandler(db *sql.DB) http.HandlerFunc {
 				return
 			}
 			isMatch = true
+			matchID = existingMatch.ID
+
+			// Initialize WebSocket connection for both users
+			initializeMatchWebSocket(matchID, userID, likedUserID)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]bool{"isMatch": isMatch})
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"isMatch": isMatch,
+			"matchId": matchID,
+		})
+	}
+}
+
+func initializeMatchWebSocket(matchID int, user1ID int, user2ID int) {
+	// This function will be called when a match is made
+	// The WebSocket connection will be established in the frontend
+	// when the match notification is received
+	
+	// Notify both users about the match through their existing connections
+	if connections[matchID] == nil {
+		connections[matchID] = make(map[*websocket.Conn]bool)
 	}
 }
 

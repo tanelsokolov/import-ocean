@@ -4,17 +4,51 @@ import { MessageSquare, UserRound, Heart, BellDot } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/api";
-import { Avatar, AvatarImage, AvatarFallback } from "./ui/avatar";
+import { useEffect } from "react";
 
 export const Header = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const token = localStorage.getItem("token");
 
   const { data: notifications, refetch } = useQuery({
     queryKey: ['notifications'],
     queryFn: () => apiRequest('/api/notifications'),
     refetchInterval: 30000,
   });
+
+  useEffect(() => {
+    if (!token) return;
+
+    const connectWebSocket = () => {
+      const ws = new WebSocket(`ws://localhost:3000/ws/notifications?token=${token}`);
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.type === 'match' || data.type === 'message') {
+          refetch();
+          if (data.type === 'match') {
+            toast({
+              title: "New Match!",
+              description: "Someone has matched with you!",
+            });
+          }
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+      };
+
+      return ws;
+    };
+
+    const ws = connectWebSocket();
+
+    return () => {
+      if (ws) ws.close();
+    };
+  }, [token, refetch, toast]);
 
   const markNotificationsAsRead = useMutation({
     mutationFn: () => apiRequest('/api/notifications/mark-read', { method: 'POST' }),
