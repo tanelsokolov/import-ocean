@@ -22,7 +22,7 @@ func GetNotificationsHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Get unread messages count - now includes ALL unread messages
+		// Get unread messages count for ALL matches, including those not yet opened
 		var unreadMessages int
 		err = db.QueryRow(`
 			SELECT COUNT(*) FROM chat_messages cm
@@ -30,6 +30,7 @@ func GetNotificationsHandler(db *sql.DB) http.HandlerFunc {
 			WHERE (m.user_id_1 = $1 OR m.user_id_2 = $1)
 			AND cm.sender_id != $1
 			AND cm.read = false
+			AND m.status = 'connected'
 		`, userID).Scan(&unreadMessages)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
@@ -37,7 +38,7 @@ func GetNotificationsHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Get new matches count (matches that are in 'connected' status)
+		// Get new matches count
 		var newMatches int
 		err = db.QueryRow(`
 			SELECT COUNT(*) FROM matches
@@ -75,10 +76,12 @@ func MarkNotificationsAsReadHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		// Update last notification check timestamp
 		_, err = db.Exec(`
-			UPDATE user_status
-			SET last_notification_check = CURRENT_TIMESTAMP
-			WHERE user_id = $1
+			INSERT INTO user_status (user_id, last_notification_check)
+			VALUES ($1, CURRENT_TIMESTAMP)
+			ON CONFLICT (user_id)
+			DO UPDATE SET last_notification_check = CURRENT_TIMESTAMP
 		`, userID)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)

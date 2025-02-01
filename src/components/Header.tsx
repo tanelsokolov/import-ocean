@@ -13,7 +13,7 @@ export const Header = () => {
   const { data: notifications, refetch } = useQuery({
     queryKey: ['notifications'],
     queryFn: () => apiRequest('/api/notifications'),
-    refetchInterval: 30000, // Refetch every 30 seconds
+    refetchInterval: 30000,
   });
 
   const markNotificationsAsRead = useMutation({
@@ -35,6 +35,14 @@ export const Header = () => {
 
   const handleNotificationsClick = () => {
     markNotificationsAsRead.mutate();
+    navigate("/chats");
+  };
+
+  const handleChatsClick = () => {
+    // Mark notifications as read when directly clicking the Chats button
+    if (notifications?.unreadMessages > 0) {
+      markNotificationsAsRead.mutate();
+    }
     navigate("/chats");
   };
 
@@ -72,10 +80,10 @@ export const Header = () => {
           <Button
             variant="ghost"
             className="flex items-center gap-2 relative"
-            onClick={handleNotificationsClick}
+            onClick={handleChatsClick}
           >
             {notifications?.unreadMessages > 0 ? (
-              <BellDot className="w-4 h-4 text-red-500" />///EEEEMALDADA
+              <BellDot className="w-4 h-4 text-red-500" />
             ) : (
               <MessageSquare className="w-4 h-4" />
             )}
