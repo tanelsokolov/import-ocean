@@ -1,72 +1,79 @@
-import { Toaster } from "@/components/ui/toaster";
-import { Toaster as Sonner } from "@/components/ui/sonner";
-import { TooltipProvider } from "@/components/ui/tooltip";
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { PrivateRoute } from "@/components/auth/PrivateRoute";
-import Index from "./pages/Index";
-import Dashboard from "./pages/Dashboard";
-import Profile from "./pages/Profile";
-import Chats from "./pages/Chats";
-import Matches from "./pages/Matches";
-import UserProfile from "./pages/UserProfile";
+import { Toaster } from "@/components/ui/toaster";
+import Login from "@/pages/Login";
+import Register from "@/pages/Register";
+import Dashboard from "@/pages/Dashboard";
+import Profile from "@/pages/Profile";
+import Matches from "@/pages/Matches";
+import Chats from "@/pages/Chats";
+import { WebSocketProvider } from "./contexts/WebSocketContext";
 
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 5, // 5 minutes
+      retry: 1,
+    },
+  },
+});
 
-const queryClient = new QueryClient();
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <WebSocketProvider>
+        <div className="min-h-screen">
+          <Router>
+            <Routes>
+              <Route path="/" element={<Login />} />
+              <Route path="/register" element={<Register />} />
+              <Route
+                path="/dashboard"
+                element={
+                  <RequireAuth>
+                    <Dashboard />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/profile"
+                element={
+                  <RequireAuth>
+                    <Profile />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/matches"
+                element={
+                  <RequireAuth>
+                    <Matches />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/chats"
+                element={
+                  <RequireAuth>
+                    <Chats />
+                  </RequireAuth>
+                }
+              />
+            </Routes>
+          </Router>
+          <Toaster />
+        </div>
+      </WebSocketProvider>
+    </QueryClientProvider>
+  );
+}
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          <Route
-            path="/dashboard"
-            element={
-              <PrivateRoute>
-                <Dashboard />
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/profile"
-            element={
-              <PrivateRoute>
-                <Profile />
-              </PrivateRoute>
-            }
-          />
-          <Route path="/profile/:userId" element={<UserProfile />} />
-          <Route
-            path="/chats"
-            element={
-              <PrivateRoute>
-                <Chats />
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/matches"
-            element={
-              <PrivateRoute>
-                <Matches />
-              </PrivateRoute>
-            }
-          />
-                    <Route
-            path="/chats/:userId"
-            element={
-              <PrivateRoute>
-                <Chats />
-              </PrivateRoute>
-            }
-          />
-        </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
-  </QueryClientProvider>
-);
+function RequireAuth({ children }: { children: JSX.Element }) {
+  const token = localStorage.getItem("token");
+  if (!token) {
+    return <Navigate to="/" replace />;
+  }
+  return children;
+}
 
 export default App;

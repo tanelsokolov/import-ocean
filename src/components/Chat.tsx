@@ -6,6 +6,7 @@ import { Textarea } from "./ui/textarea";
 import { useState, useEffect, useRef } from "react";
 import { useToast } from "./ui/use-toast";
 import { Avatar, AvatarImage, AvatarFallback } from "./ui/avatar";
+import { useWebSocket } from "@/contexts/WebSocketContext";
 
 interface Message {
   id: string;
@@ -28,10 +29,7 @@ export const Chat = ({ matchId, currentUserId, otherUserName, otherUserPicture }
   const { toast } = useToast();
   const [localMessages, setLocalMessages] = useState<Message[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
-  const maxRetries = 5;
-  const [retryCount, setRetryCount] = useState(0);
+  const { connectWebSocket, sendMessage, isConnected } = useWebSocket();
 
   const { data: initialMessages, refetch } = useQuery({
     queryKey: ['messages', matchId],
@@ -58,89 +56,10 @@ export const Chat = ({ matchId, currentUserId, otherUserName, otherUserPicture }
     }
   }, [initialMessages]);
 
-  const connectWebSocket = () => {
-    if (!matchId || !currentUserId) {
-      return;
-    }
-
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      return;
-    }
-
-    const token = localStorage.getItem('token');
-    if (!token) {
-      console.error('No authentication token found');
-      return;
-    }
-
-    const websocket = new WebSocket(`ws://localhost:3000/ws/chat/${matchId}?token=${token}`);
-    
-    websocket.onopen = () => {
-      setRetryCount(0);
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-    };
-    
-    websocket.onmessage = (event) => {
-      const newMessage = JSON.parse(event.data);
-      setLocalMessages(prev => {
-        if (!Array.isArray(prev)) {
-          return [newMessage];
-        }
-        if (prev.some(msg => msg.id === newMessage.id)) {
-          return prev;
-        }
-        return [...prev, newMessage];
-      });
-
-      // Immediately invalidate notifications query when receiving a new message
-      queryClient.invalidateQueries({ queryKey: ['notifications'] });
-    };
-
-    websocket.onclose = (event) => {
-      wsRef.current = null;
-
-      if (retryCount < maxRetries) {
-        const timeout = Math.min(1000 * Math.pow(2, retryCount), 10000);
-        reconnectTimeoutRef.current = setTimeout(() => {
-          setRetryCount(prev => prev + 1);
-          connectWebSocket();
-        }, timeout);
-      } else {
-        toast({
-          title: "Connection Lost",
-          description: "Unable to maintain chat connection. Please refresh the page.",
-          variant: "destructive",
-        });
-      }
-    };
-
-    websocket.onerror = (error) => {
-      console.error('WebSocket error for match:', matchId, error);
-      toast({
-        title: "Connection Error",
-        description: "There was an error with the chat connection",
-        variant: "destructive",
-      });
-    };
-
-    wsRef.current = websocket;
-  };
-
   useEffect(() => {
     if (matchId && currentUserId) {
-      connectWebSocket();
+      connectWebSocket(matchId);
     }
-
-    return () => {
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.close(1000, "Component unmounting");
-      }
-    };
   }, [matchId, currentUserId]);
 
   useEffect(() => {
@@ -159,11 +78,13 @@ export const Chat = ({ matchId, currentUserId, otherUserName, otherUserPicture }
         }
       }).then(() => {
         refetch();
+        // Also invalidate notifications when marking messages as read
+        queryClient.invalidateQueries({ queryKey: ['notifications'] });
       });
     }
-  }, [matchId, currentUserId, refetch]);
+  }, [matchId, currentUserId, refetch, queryClient]);
 
-  const sendMessage = async () => {
+  const handleSendMessage = async () => {
     if (!message.trim() || !matchId || !currentUserId) {
       if (!matchId || !currentUserId) {
         toast({
@@ -172,16 +93,6 @@ export const Chat = ({ matchId, currentUserId, otherUserName, otherUserPicture }
           variant: "destructive",
         });
       }
-      return;
-    }
-    
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      connectWebSocket();
-      toast({
-        title: "Connection Error",
-        description: "Reconnecting to chat...",
-        variant: "destructive",
-      });
       return;
     }
 
@@ -194,13 +105,11 @@ export const Chat = ({ matchId, currentUserId, otherUserName, otherUserPicture }
         read: false
       };
       
-      wsRef.current.send(JSON.stringify({ ...messageData, match_id: matchId }));
+      sendMessage(matchId, messageData);
       setLocalMessages(prev => [...(Array.isArray(prev) ? prev : []), messageData]);
       setMessage("");
       
-      // Invalidate notifications after sending a message
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
-      
       setTimeout(() => refetch(), 500);
     } catch (error) {
       console.error('Error sending message:', error);
@@ -260,11 +169,11 @@ export const Chat = ({ matchId, currentUserId, otherUserName, otherUserPicture }
           onKeyPress={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
-              sendMessage();
+              handleSendMessage();
             }
           }}
         />
-        <Button onClick={sendMessage}>Send</Button>
+        <Button onClick={handleSendMessage}>Send</Button>
       </div>
     </div>
   );
