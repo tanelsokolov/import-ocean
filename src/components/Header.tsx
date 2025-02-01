@@ -9,70 +9,83 @@ import { Avatar, AvatarImage, AvatarFallback } from "./ui/avatar";
 
 export const Header = () => {
   const navigate = useNavigate();
-  const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [ws, setWs] = useState<WebSocket | null>(null);
+  const [unreadMessages, setUnreadMessages] = useState(0);
+  const [newMatches, setNewMatches] = useState(0);
 
-  const { data: notifications, refetch } = useQuery({
+  // Fetch initial notifications
+  const { data, refetch } = useQuery({
     queryKey: ["notifications"],
-    queryFn: () => apiRequest("/api/notifications"),
+    queryFn: async () => {
+      const res = await apiRequest("/api/notifications");
+      setUnreadMessages(res.unreadMessages);
+      setNewMatches(res.newMatches);
+      return res;
+    },
     refetchInterval: 30000, // Refetch every 30 seconds
   });
 
+  // Mark notifications as read
   const markNotificationsAsRead = useMutation({
     mutationFn: () => apiRequest("/api/notifications/mark-read", { method: "POST" }),
     onSuccess: () => {
+      setUnreadMessages(0);
       refetch();
     },
   });
 
+  // Establish WebSocket connection
   useEffect(() => {
     const connectWebSocket = () => {
-      const token = localStorage.getItem("token");
-      if (!token) return;
-
-      const websocket = new WebSocket(`ws://localhost:3000/ws/notifications?token=${token}`);
-
-      websocket.onopen = () => {
-        console.log("Notification WebSocket connected");
-      };
-
-      websocket.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        
-        if (data.type === "new_message" || data.type === "new_match") {
-          queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      try {
+        const token = localStorage.getItem("token");
+        if (!token) {
+          console.error("No token available");
+          return;
         }
-      };
-
-      websocket.onclose = () => {
-        console.log("Notification WebSocket disconnected, reconnecting...");
-        setTimeout(connectWebSocket, 5000); // Reconnect after 5s
-      };
-
-      setWs(websocket);
+  
+        const websocket = new WebSocket(`ws://localhost:3000/ws/notifications?token=${token}`);
+  
+        websocket.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            console.log("Received WebSocket message:", data);
+  
+            if (data.type === "notification") {
+              // Invalidate and refetch notifications when a message arrives
+              queryClient.invalidateQueries({ queryKey: ["notifications"] });
+            }
+          } catch (err) {
+            console.error("Error parsing WebSocket message:", err);
+          }
+        };
+  
+        websocket.onclose = (event) => {
+          console.log("WebSocket closed with code:", event.code);
+          setTimeout(connectWebSocket, 5000);
+        };
+  
+        setWs(websocket);
+      } catch (error) {
+        console.error("WebSocket connection error:", error);
+      }
     };
-
+  
     connectWebSocket();
-
+  
     return () => {
       ws?.close();
     };
   }, [queryClient]);
+  
 
   const handleLogout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
-    toast({
-      title: "Logged out successfully",
-      description: "See you next time!",
-    });
+    toast({ title: "Logged out successfully", description: "See you next time!" });
     navigate("/");
-  };
-
-  const handleNotificationsClick = () => {
-    markNotificationsAsRead.mutate();
-    navigate("/chats");
   };
 
   return (
@@ -92,22 +105,25 @@ export const Header = () => {
           <Button variant="ghost" className="flex items-center gap-2 relative" onClick={() => navigate("/matches")}>
             <Heart className="w-4 h-4" />
             Matches
-            {notifications?.newMatches > 0 && (
+            {newMatches > 0 && (
               <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                {notifications.newMatches}
+                {newMatches}
               </span>
             )}
           </Button>
-          <Button variant="ghost" className="flex items-center gap-2 relative" onClick={handleNotificationsClick}>
-            {notifications?.unreadMessages > 0 ? (
+          <Button variant="ghost" className="flex items-center gap-2 relative" onClick={() => {
+            markNotificationsAsRead.mutate();
+            navigate("/chats");
+          }}>
+            {unreadMessages > 0 ? (
               <BellDot className="w-4 h-4 text-red-500" />
             ) : (
               <MessageSquare className="w-4 h-4" />
             )}
             Chats
-            {notifications?.unreadMessages > 0 && (
+            {unreadMessages > 0 && (
               <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                {notifications.unreadMessages}
+                {unreadMessages}
               </span>
             )}
           </Button>

@@ -31,9 +31,9 @@ func GetNotificationsHandler(db *sql.DB) http.HandlerFunc {
 
 		// Get the last notification check time
 		var lastCheck sql.NullTime
-		err = db.QueryRow(`
-			SELECT last_notification_check FROM user_status WHERE user_id = $1
-		`, userID).Scan(&lastCheck)
+		err = db.QueryRow(
+			`SELECT last_notification_check FROM user_status WHERE user_id = $1`,
+			userID).Scan(&lastCheck)
 		if err != nil && err != sql.ErrNoRows {
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(map[string]string{"error": "Database error"})
@@ -42,14 +42,14 @@ func GetNotificationsHandler(db *sql.DB) http.HandlerFunc {
 
 		// Get unread messages count
 		var unreadMessages int
-		err = db.QueryRow(`
-			SELECT COUNT(*) FROM chat_messages cm
+		err = db.QueryRow(
+			`SELECT COUNT(*) FROM chat_messages cm
 			JOIN matches m ON cm.match_id = m.id
 			WHERE (m.user_id_1 = $1 OR m.user_id_2 = $1)
 			AND cm.sender_id != $1
 			AND cm.read = false
-			AND ($2::timestamp IS NULL OR cm.timestamp > $2)
-		`, userID, lastCheck).Scan(&unreadMessages)
+			AND ($2::timestamp IS NULL OR cm.timestamp > $2)`,
+			userID, lastCheck).Scan(&unreadMessages)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(map[string]string{"error": "Database error"})
@@ -58,12 +58,11 @@ func GetNotificationsHandler(db *sql.DB) http.HandlerFunc {
 
 		// Get new matches count
 		var newMatches int
-		err = db.QueryRow(`
-			SELECT COUNT(*) FROM matches
+		err = db.QueryRow(
+			`SELECT COUNT(*) FROM matches
 			WHERE (user_id_1 = $1 OR user_id_2 = $1)
 			AND status = 'connected'
-			AND ($2::timestamp IS NULL OR created_at > $2)
-		`, userID, lastCheck).Scan(&newMatches)
+		AND ($2::timestamp IS NULL OR created_at > $2)`, userID, lastCheck).Scan(&newMatches)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(map[string]string{"error": "Database error"})
@@ -90,11 +89,10 @@ func MarkNotificationsAsReadHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		_, err = db.Exec(`
-			UPDATE user_status
+		_, err = db.Exec(
+			`UPDATE user_status
 			SET last_notification_check = CURRENT_TIMESTAMP
-			WHERE user_id = $1
-		`, userID)
+		WHERE user_id = $1`, userID)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(map[string]string{"error": "Database error"})
@@ -104,36 +102,77 @@ func MarkNotificationsAsReadHandler(db *sql.DB) http.HandlerFunc {
 		json.NewEncoder(w).Encode(map[string]string{"message": "Notifications marked as read"})
 	}
 }
-
 func HandleNotificationWebSocket() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userID, err := GetUserIDFromToken(r)
+		// Extract token from query parameter instead of header
+		token := r.URL.Query().Get("token")
+		if token == "" {
+			http.Error(w, "No token provided", http.StatusUnauthorized)
+			return
+		}
+
+		// Create a mock request with proper Authorization header
+		mockReq := &http.Request{
+			Header: http.Header{
+				"Authorization": []string{"Bearer " + token},
+			},
+		}
+
+		userID, err := GetUserIDFromToken(mockReq)
 		if err != nil {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
 
 		upgrader := websocket.Upgrader{
-			CheckOrigin: func(r *http.Request) bool { return true },
+			CheckOrigin:     func(r *http.Request) bool { return true },
+			ReadBufferSize:  1024,
+			WriteBufferSize: 1024,
 		}
+
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
-			log.Println("WebSocket upgrade error:", err)
+			log.Printf("WebSocket upgrade error for user %d: %v", userID, err)
 			return
 		}
-		defer conn.Close()
 
+		// Use defer with cleanup
+		defer func() {
+			notifLock.Lock()
+			delete(notificationConnections, userID)
+			notifLock.Unlock()
+			conn.Close()
+		}()
+
+		// Store connection with proper locking
 		notifLock.Lock()
 		notificationConnections[userID] = conn
 		notifLock.Unlock()
 
+		// Send initial connection success message
+		data, _ := json.Marshal(map[string]string{"type": "connected"})
+		err = conn.WriteMessage(websocket.TextMessage, data)
+		if err != nil {
+			log.Printf("Error sending connection confirmation: %v", err)
+			return
+		}
+
+		// Keep connection alive and handle messages
 		for {
-			_, _, err := conn.ReadMessage()
+			messageType, _, err := conn.ReadMessage()
 			if err != nil {
-				notifLock.Lock()
-				delete(notificationConnections, userID)
-				notifLock.Unlock()
+				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+					log.Printf("WebSocket error for user %d: %v", userID, err)
+				}
 				break
+			}
+
+			// Respond to ping messages to keep connection alive
+			if messageType == websocket.PingMessage {
+				if err := conn.WriteMessage(websocket.PongMessage, nil); err != nil {
+					log.Printf("Error sending pong: %v", err)
+					break
+				}
 			}
 		}
 	}
