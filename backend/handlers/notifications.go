@@ -22,7 +22,18 @@ func GetNotificationsHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Get unread messages count for ALL matches, including those not yet opened
+		// Get the last notification check time
+		var lastCheck sql.NullTime
+		err = db.QueryRow(`
+			SELECT last_notification_check FROM user_status WHERE user_id = $1
+		`, userID).Scan(&lastCheck)
+		if err != nil && err != sql.ErrNoRows {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Database error"})
+			return
+		}
+
+		// Get unread messages count
 		var unreadMessages int
 		err = db.QueryRow(`
 			SELECT COUNT(*) FROM chat_messages cm
@@ -30,8 +41,8 @@ func GetNotificationsHandler(db *sql.DB) http.HandlerFunc {
 			WHERE (m.user_id_1 = $1 OR m.user_id_2 = $1)
 			AND cm.sender_id != $1
 			AND cm.read = false
-			AND m.status = 'connected'
-		`, userID).Scan(&unreadMessages)
+			AND ($2::timestamp IS NULL OR cm.timestamp > $2)
+		`, userID, lastCheck).Scan(&unreadMessages)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(map[string]string{"error": "Database error"})
@@ -44,12 +55,8 @@ func GetNotificationsHandler(db *sql.DB) http.HandlerFunc {
 			SELECT COUNT(*) FROM matches
 			WHERE (user_id_1 = $1 OR user_id_2 = $1)
 			AND status = 'connected'
-			AND updated_at > (
-				SELECT COALESCE(last_notification_check, '1970-01-01'::timestamp)
-				FROM user_status
-				WHERE user_id = $1
-			)
-		`, userID).Scan(&newMatches)
+			AND ($2::timestamp IS NULL OR created_at > $2)
+		`, userID, lastCheck).Scan(&newMatches)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(map[string]string{"error": "Database error"})
@@ -76,12 +83,10 @@ func MarkNotificationsAsReadHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Update last notification check timestamp
 		_, err = db.Exec(`
-			INSERT INTO user_status (user_id, last_notification_check)
-			VALUES ($1, CURRENT_TIMESTAMP)
-			ON CONFLICT (user_id)
-			DO UPDATE SET last_notification_check = CURRENT_TIMESTAMP
+			UPDATE user_status
+			SET last_notification_check = CURRENT_TIMESTAMP
+			WHERE user_id = $1
 		`, userID)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
