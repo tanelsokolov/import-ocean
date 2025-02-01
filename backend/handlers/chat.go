@@ -139,6 +139,17 @@ func broadcastMessage(matchID, messageType int, message ChatMessage) {
 			delete(connections[matchID], conn)
 		}
 	}
+
+	// Identify the recipient of the message
+	var receiverID int
+	if message.SenderID == message.MatchID {
+		receiverID = message.MatchID // Assuming match ID represents the other user
+	} else {
+		receiverID = message.SenderID
+	}
+
+	// Send real-time notification
+	SendNotification(receiverID, "new_message")
 }
 
 func GetChatsHandler(db *sql.DB) http.HandlerFunc {

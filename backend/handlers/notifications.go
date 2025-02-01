@@ -3,13 +3,20 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"log"
 	"net/http"
+	"sync"
+
+	"github.com/gorilla/websocket"
 )
 
 type NotificationResponse struct {
 	UnreadMessages int `json:"unreadMessages"`
 	NewMatches     int `json:"newMatches"`
 }
+
+var notificationConnections = make(map[int]*websocket.Conn)
+var notifLock sync.Mutex
 
 func GetNotificationsHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -95,5 +102,53 @@ func MarkNotificationsAsReadHandler(db *sql.DB) http.HandlerFunc {
 		}
 
 		json.NewEncoder(w).Encode(map[string]string{"message": "Notifications marked as read"})
+	}
+}
+
+func HandleNotificationWebSocket() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, err := GetUserIDFromToken(r)
+		if err != nil {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		upgrader := websocket.Upgrader{
+			CheckOrigin: func(r *http.Request) bool { return true },
+		}
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			log.Println("WebSocket upgrade error:", err)
+			return
+		}
+		defer conn.Close()
+
+		notifLock.Lock()
+		notificationConnections[userID] = conn
+		notifLock.Unlock()
+
+		for {
+			_, _, err := conn.ReadMessage()
+			if err != nil {
+				notifLock.Lock()
+				delete(notificationConnections, userID)
+				notifLock.Unlock()
+				break
+			}
+		}
+	}
+}
+
+// Broadcast notification to a user
+func SendNotification(userID int, messageType string) {
+	notifLock.Lock()
+	conn, exists := notificationConnections[userID]
+	notifLock.Unlock()
+
+	if exists {
+		data, _ := json.Marshal(map[string]string{
+			"type": messageType,
+		})
+		conn.WriteMessage(websocket.TextMessage, data)
 	}
 }

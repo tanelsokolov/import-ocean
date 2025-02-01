@@ -126,6 +126,7 @@ func main() {
 
 	// WebSocket route
 	r.HandleFunc("/ws/chat/{matchId}", handlers.HandleWebSocket(db))
+	r.HandleFunc("/ws/notifications", handlers.HandleNotificationWebSocket())
 
 	// Chat routes
 	r.HandleFunc("/api/matches/chats", handlers.GetChatsHandler(db)).Methods("GET", "OPTIONS")
