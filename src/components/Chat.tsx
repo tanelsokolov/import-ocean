@@ -54,19 +54,16 @@ export const Chat = ({ matchId, currentUserId, otherUserName, otherUserPicture }
 
   useEffect(() => {
     if (initialMessages?.messages) {
-      // Reverse the order of messages to show oldest first
       setLocalMessages(initialMessages.messages);
     }
   }, [initialMessages]);
 
   const connectWebSocket = () => {
     if (!matchId || !currentUserId) {
-      //console.log('No match ID or user ID provided');
       return;
     }
 
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      //console.log('WebSocket already connected');
       return;
     }
 
@@ -76,42 +73,36 @@ export const Chat = ({ matchId, currentUserId, otherUserName, otherUserPicture }
       return;
     }
 
-    //console.log('Connecting WebSocket for match:', matchId);
     const websocket = new WebSocket(`ws://localhost:3000/ws/chat/${matchId}?token=${token}`);
     
     websocket.onopen = () => {
-      //console.log('WebSocket Connected for match:', matchId);
       setRetryCount(0);
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }
     };
     
+    websocket.onmessage = (event) => {
+      const newMessage = JSON.parse(event.data);
+      setLocalMessages(prev => {
+        if (!Array.isArray(prev)) {
+          return [newMessage];
+        }
+        if (prev.some(msg => msg.id === newMessage.id)) {
+          return prev;
+        }
+        return [...prev, newMessage];
+      });
 
-websocket.onmessage = (event) => {
-  const newMessage = JSON.parse(event.data);
-  //console.log('Received message:', newMessage);
-  setLocalMessages(prev => {
-    if (!Array.isArray(prev)) {
-      return [newMessage];
-    }
-    if (prev.some(msg => msg.id === newMessage.id)) {
-      return prev;
-    }
-    return [...prev, newMessage];
-  });
-
-  // Trigger a refetch of notifications when a new message is received
-  queryClient.invalidateQueries({ queryKey: ['notifications'] });
-};
+      // Immediately invalidate notifications query when receiving a new message
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    };
 
     websocket.onclose = (event) => {
-      //console.log("WebSocket connection closed for match:", matchId);
       wsRef.current = null;
 
       if (retryCount < maxRetries) {
         const timeout = Math.min(1000 * Math.pow(2, retryCount), 10000);
-        //console.log(`Attempting to reconnect in ${timeout}ms... (Attempt ${retryCount + 1}/${maxRetries})`);
         reconnectTimeoutRef.current = setTimeout(() => {
           setRetryCount(prev => prev + 1);
           connectWebSocket();
@@ -139,7 +130,6 @@ websocket.onmessage = (event) => {
 
   useEffect(() => {
     if (matchId && currentUserId) {
-      //console.log('Initializing WebSocket connection for match:', matchId);
       connectWebSocket();
     }
 
@@ -186,7 +176,6 @@ websocket.onmessage = (event) => {
     }
     
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      //console.log('WebSocket not ready, attempting to reconnect...');
       connectWebSocket();
       toast({
         title: "Connection Error",
@@ -205,13 +194,13 @@ websocket.onmessage = (event) => {
         read: false
       };
       
-      //console.log('Sending message:', messageData);
       wsRef.current.send(JSON.stringify({ ...messageData, match_id: matchId }));
-      
       setLocalMessages(prev => [...(Array.isArray(prev) ? prev : []), messageData]);
       setMessage("");
       
-      // Refetch messages after sending to ensure consistency
+      // Invalidate notifications after sending a message
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      
       setTimeout(() => refetch(), 500);
     } catch (error) {
       console.error('Error sending message:', error);
