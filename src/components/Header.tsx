@@ -24,7 +24,7 @@ export const Header = () => {
       setNewMatches(res.newMatches);
       return res;
     },
-    refetchInterval: 30000, // Refetch every 30 seconds
+    refetchInterval: 100, // Refetch every 30 seconds
   });
 
   // Mark notifications as read
