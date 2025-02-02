@@ -3,7 +3,6 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -71,7 +70,7 @@ func HandleWebSocket(db *sql.DB) http.HandlerFunc {
 
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
-			log.Printf("WebSocket upgrade error: %v", err)
+			//log.printf("WebSocket upgrade error: %v", err)
 			return
 		}
 		defer conn.Close()
@@ -88,13 +87,24 @@ func HandleWebSocket(db *sql.DB) http.HandlerFunc {
 		for {
 			messageType, p, err := conn.ReadMessage()
 			if err != nil {
-				//log.Printf("WebSocket error: %v", err)
+				//log.printf("WebSocket error: %v", err)
 				break
+			}
+
+			if strings.Contains(string(p), `"typing"`) {
+				var typingMessage TypingMessage
+				if err := json.Unmarshal(p, &typingMessage); err != nil {
+					//log.printf("Error parsing message: %v", err)
+					continue
+				}
+				typingMessage.UserID = userID
+				broadcastTyping(matchID, messageType, typingMessage)
+				continue
 			}
 
 			var message ChatMessage
 			if err := json.Unmarshal(p, &message); err != nil {
-				log.Printf("Error parsing message: %v", err)
+				//log.printf("Error parsing message: %v", err)
 				continue
 			}
 
@@ -104,7 +114,7 @@ func HandleWebSocket(db *sql.DB) http.HandlerFunc {
 
 			_, err = db.Exec("INSERT INTO chat_messages (id, match_id, sender_id, content, timestamp) VALUES ($1, $2, $3, $4, $5)", message.ID, message.MatchID, message.SenderID, message.Content, message.Timestamp)
 			if err != nil {
-				log.Printf("Database error: %v", err)
+				//log.printf("Database error: %v", err)
 				continue
 			}
 
@@ -128,28 +138,36 @@ func broadcastMessage(matchID, messageType int, message ChatMessage) {
 
 	msgData, err := json.Marshal(message)
 	if err != nil {
-		log.Printf("Error encoding message: %v", err)
+		//log.printf("Error encoding message: %v", err)
 		return
 	}
 
 	for conn := range connections[matchID] {
 		if err := conn.WriteMessage(messageType, msgData); err != nil {
-			log.Printf("Error sending message: %v", err)
+			//log.printf("Error sending message: %v", err)
 			conn.Close()
 			delete(connections[matchID], conn)
 		}
 	}
+}
 
-	// Identify the recipient of the message
-	var receiverID int
-	if message.SenderID == message.MatchID {
-		receiverID = message.MatchID // Assuming match ID represents the other user
-	} else {
-		receiverID = message.SenderID
+func broadcastTyping(matchID, messageType int, typingMessage TypingMessage) {
+	connLock.Lock()
+	defer connLock.Unlock()
+
+	msgData, err := json.Marshal(typingMessage)
+	if err != nil {
+		//log.printf("Error encoding message: %v", err)
+		return
 	}
 
-	// Send real-time notification
-	SendNotification(receiverID, "new_message")
+	for conn := range connections[matchID] {
+		if err := conn.WriteMessage(messageType, msgData); err != nil {
+			//log.printf("Error sending message: %v", err)
+			conn.Close()
+			delete(connections[matchID], conn)
+		}
+	}
 }
 
 func GetChatsHandler(db *sql.DB) http.HandlerFunc {
@@ -349,7 +367,7 @@ func GetChatMessagesHandler(db *sql.DB) http.HandlerFunc {
 			WHERE match_id = $1 AND sender_id != $2 AND read = false
 		`, matchID, userID)
 		if err != nil {
-			log.Printf("Error marking messages as read: %v", err)
+			//log.printf("Error marking messages as read: %v", err)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -365,30 +383,10 @@ func MarkMessagesAsReadHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		vars := mux.Vars(r)
-		matchID := vars["id"]
-
-		// Verify user is part of this match
-		var count int
-		err = db.QueryRow(`
-			SELECT COUNT(*) FROM matches
-			WHERE id = $1 AND (user_id_1 = $2 OR user_id_2 = $2)
-		`, matchID, userID).Scan(&count)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		if count == 0 {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-
-		// Mark messages as read
-		_, err = db.Exec(`
-			UPDATE chat_messages
-			SET read = true
-			WHERE match_id = $1 AND sender_id != $2 AND read = false
-		`, matchID, userID)
+		_, err = db.Exec(
+			`UPDATE user_status
+            SET last_message_check = CURRENT_TIMESTAMP
+            WHERE user_id = $1`, userID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

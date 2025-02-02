@@ -134,10 +134,14 @@ DB_PASSWORD=postgres
 
 ## Fixes
 - Age bug fix, age cannot be negative
-- Added profile pages for users, profiles can be accessed from matches and by clicking on name
+- Added profile pages for users, profiles can be accessed from matches and by clicking on name in matches tab.
 - Websocket messages fix, messages go in realtime. Notifications on header also update in realtime.
 - User can now filter potential matches by Age(closest to), Looking for(same first), Interests(the more the better). User can filter by location also, but that change has to be made in profile. **Database update needed, use init.sql**
 - Email added to profile page.
-- The profile endpoint does return about me information. Usage : curl -X GET http://localhost:3000/api/me/profile   -H "Authorization: YOUR BEARER TOKEN HERE"
-- The users endpoint returns 404 when not authorized. Can be seen in console or curl -X GET http://localhost:3000/api/users/ID -H "Authorization: Bearer YOUR BEARER TOKEN HERE"
+- The profile endpoint does return about me information. For your own profile usage : curl -X GET http://localhost:3000/api/me/profile   -H "Authorization: YOUR BEARER TOKEN HERE". **Also can be seen in dev tools**
 
+![alt text](img/image.png)
+- For other users about me information usage : curl -X GET http://localhost:3000/api/users/ID/profile   -H "Authorization: YOUR BEARER TOKEN HERE"
+![alt text](img/image-1.png)
+- The users endpoint returns 404 when not authorized. Can be seen in console or curl -X GET http://localhost:3000/api/users/ID -H "Authorization: Bearer YOUR BEARER TOKEN HERE"
+- Added typing indicator.

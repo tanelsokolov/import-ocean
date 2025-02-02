@@ -295,10 +295,6 @@ func LikeUserHandler(db *sql.DB) http.HandlerFunc {
 				return
 			}
 			isMatch = true
-			if isMatch {
-				SendNotification(userID, "new_match")
-				//SendNotification(likedUserID, "new_match")
-			}
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -372,8 +368,6 @@ func AcceptMatchHandler(db *sql.DB) http.HandlerFunc {
 			SET status = 'connected', updated_at = CURRENT_TIMESTAMP
 			WHERE id = $1 AND user_id_2 = $2 AND status = 'pending'
 		`, matchID, userID)
-		SendNotification(userID, "new_match")
-		//SendNotification(matchID, "new_match")
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

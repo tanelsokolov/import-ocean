@@ -3,7 +3,6 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
-	"log"
 	"net/http"
 	"sync"
 
@@ -29,40 +28,41 @@ func GetNotificationsHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Get the last notification check time
-		var lastCheck sql.NullTime
+		// Get the last check times separately
+		var lastMessageCheck, lastMatchCheck sql.NullTime
 		err = db.QueryRow(
-			`SELECT last_notification_check FROM user_status WHERE user_id = $1`,
-			userID).Scan(&lastCheck)
+			`SELECT last_message_check, last_match_check FROM user_status WHERE user_id = $1`,
+			userID).Scan(&lastMessageCheck, &lastMatchCheck)
 		if err != nil && err != sql.ErrNoRows {
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(map[string]string{"error": "Database error"})
 			return
 		}
 
-		// Get unread messages count
+		// Get unread messages count (compared to last_message_check)
 		var unreadMessages int
 		err = db.QueryRow(
 			`SELECT COUNT(*) FROM chat_messages cm
-			JOIN matches m ON cm.match_id = m.id
-			WHERE (m.user_id_1 = $1 OR m.user_id_2 = $1)
-			AND cm.sender_id != $1
-			AND cm.read = false
-			AND ($2::timestamp IS NULL OR cm.timestamp > $2)`,
-			userID, lastCheck).Scan(&unreadMessages)
+            JOIN matches m ON cm.match_id = m.id
+            WHERE (m.user_id_1 = $1 OR m.user_id_2 = $1)
+            AND cm.sender_id != $1
+            AND cm.read = false
+            AND ($2::timestamp IS NULL OR cm.timestamp > $2)`,
+			userID, lastMessageCheck).Scan(&unreadMessages)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(map[string]string{"error": "Database error"})
 			return
 		}
 
-		// Get new matches count
+		// Get new matches count (compared to last_match_check)
 		var newMatches int
 		err = db.QueryRow(
 			`SELECT COUNT(*) FROM matches
-			WHERE (user_id_1 = $1 OR user_id_2 = $1)
-			AND status = 'connected'
-		AND ($2::timestamp IS NULL OR created_at > $2)`, userID, lastCheck).Scan(&newMatches)
+            WHERE (user_id_1 = $1 OR user_id_2 = $1)
+            AND status = 'connected'
+            AND ($2::timestamp IS NULL OR created_at > $2)`,
+			userID, lastMatchCheck).Scan(&newMatches)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(map[string]string{"error": "Database error"})
@@ -102,6 +102,7 @@ func MarkNotificationsAsReadHandler(db *sql.DB) http.HandlerFunc {
 		json.NewEncoder(w).Encode(map[string]string{"message": "Notifications marked as read"})
 	}
 }
+
 func HandleNotificationWebSocket() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Extract token from query parameter instead of header
@@ -132,7 +133,7 @@ func HandleNotificationWebSocket() http.HandlerFunc {
 
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
-			log.Printf("WebSocket upgrade error for user %d: %v", userID, err)
+			//log.printf("WebSocket upgrade error for user %d: %v", userID, err)
 			return
 		}
 
@@ -153,7 +154,7 @@ func HandleNotificationWebSocket() http.HandlerFunc {
 		data, _ := json.Marshal(map[string]string{"type": "connected"})
 		err = conn.WriteMessage(websocket.TextMessage, data)
 		if err != nil {
-			log.Printf("Error sending connection confirmation: %v", err)
+			//log.printf("Error sending connection confirmation: %v", err)
 			return
 		}
 
@@ -162,7 +163,7 @@ func HandleNotificationWebSocket() http.HandlerFunc {
 			messageType, _, err := conn.ReadMessage()
 			if err != nil {
 				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-					log.Printf("WebSocket error for user %d: %v", userID, err)
+					//log.printf("WebSocket error for user %d: %v", userID, err)
 				}
 				break
 			}
@@ -170,11 +171,36 @@ func HandleNotificationWebSocket() http.HandlerFunc {
 			// Respond to ping messages to keep connection alive
 			if messageType == websocket.PingMessage {
 				if err := conn.WriteMessage(websocket.PongMessage, nil); err != nil {
-					log.Printf("Error sending pong: %v", err)
+					//log.printf("Error sending pong: %v", err)
 					break
 				}
 			}
 		}
+	}
+}
+
+func MarkMatchesAsReadHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		userID, err := GetUserIDFromToken(r)
+		if err != nil {
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized"})
+			return
+		}
+
+		_, err = db.Exec(
+			`UPDATE user_status
+            SET last_match_check = CURRENT_TIMESTAMP
+            WHERE user_id = $1`, userID)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Database error"})
+			return
+		}
+
+		json.NewEncoder(w).Encode(map[string]string{"message": "Matches marked as read"})
 	}
 }
 

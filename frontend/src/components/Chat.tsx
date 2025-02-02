@@ -32,6 +32,8 @@ export const Chat = ({ matchId, currentUserId, otherUserName, otherUserPicture }
   const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
   const maxRetries = 5;
   const [retryCount, setRetryCount] = useState(0);
+  const [isTyping, setIsTyping] = useState(false);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const { data: initialMessages, refetch } = useQuery({
     queryKey: ['messages', matchId],
@@ -88,22 +90,27 @@ export const Chat = ({ matchId, currentUserId, otherUserName, otherUserPicture }
     };
     
 
-    websocket.onmessage = (event) => {
-      const newMessage = JSON.parse(event.data);
-      setLocalMessages(prev => {
-        if (!Array.isArray(prev)) {
-          return [newMessage];
-        }
-        if (prev.some(msg => msg.id === newMessage.id)) {
-          return prev;
-        }
-        return [...prev, newMessage];
-      });
-    
-      // Make sure to invalidate both messages and notifications
-      queryClient.invalidateQueries({ queryKey: ['notifications'] });
-      queryClient.invalidateQueries({ queryKey: ['messages', matchId] });
-    };
+websocket.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  if (data.typing !== undefined) {
+    setIsTyping(data.typing && data.user_id !== currentUserId);
+    return;
+  }
+  const newMessage = data;
+  //console.log('Received message:', newMessage);
+  setLocalMessages(prev => {
+    if (!Array.isArray(prev)) {
+      return [newMessage];
+    }
+    if (prev.some(msg => msg.id === newMessage.id)) {
+      return prev;
+    }
+    return [...prev, newMessage];
+  });
+
+  // Trigger a refetch of notifications when a new message is received
+  queryClient.invalidateQueries({ queryKey: ['notifications'] });
+};
 
     websocket.onclose = (event) => {
       //console.log("WebSocket connection closed for match:", matchId);
@@ -223,6 +230,15 @@ export const Chat = ({ matchId, currentUserId, otherUserName, otherUserPicture }
     }
   };
 
+  const handleTyping = () => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    wsRef.current.send(JSON.stringify({ typing: true, match_id: matchId, user_id: currentUserId }));
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => {
+      wsRef.current?.send(JSON.stringify({ typing: false, match_id: matchId, user_id: currentUserId }));
+    }, 1000);
+  };
+
   if (!matchId || !currentUserId) {
     return (
       <div className="flex-1 flex items-center justify-center text-gray-500">
@@ -265,7 +281,10 @@ export const Chat = ({ matchId, currentUserId, otherUserName, otherUserPicture }
       <div className="p-4 border-t flex gap-2">
         <Textarea
           value={message}
-          onChange={(e) => setMessage(e.target.value)}
+          onChange={(e) => {
+            setMessage(e.target.value);
+            handleTyping();
+          }}
           placeholder="Type your message..."
           className="flex-1 resize-none h-20"
           onKeyPress={(e) => {
@@ -277,6 +296,11 @@ export const Chat = ({ matchId, currentUserId, otherUserName, otherUserPicture }
         />
         <Button onClick={sendMessage}>Send</Button>
       </div>
+      {isTyping && (
+        <div className="p-4 text-sm text-gray-500">
+          {otherUserName} is typing...
+        </div>
+      )}
     </div>
   );
 };

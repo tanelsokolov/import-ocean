@@ -33,14 +33,14 @@ export const Matches = () => {
   });
 
   const markNotificationsAsRead = useMutation({
-    mutationFn: () => apiRequest('/api/notifications/mark-read', { method: 'POST' }),
+    mutationFn: () => apiRequest('/api/notifications/mark-matches-read', { method: 'POST' }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
     },
   });
 
   useEffect(() => {
-    markNotificationsAsRead.mutate();
+    apiRequest('/api/notifications/mark-matches-read', { method: 'POST' });
   }, []);
 
   const disconnectMutation = useMutation({
@@ -101,7 +101,7 @@ export const Matches = () => {
               <UserMinus className="h-4 w-4" />
             </Button>
             <Link 
-              to={`/chats`}
+              to={`/chats?user=${otherUserId}`}
               className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
             >
               Chat

@@ -78,7 +78,10 @@ CREATE INDEX IF NOT EXISTS idx_chat_messages_sender ON chat_messages(sender_id);
 CREATE INDEX IF NOT EXISTS idx_tokens_user ON tokens(user_id);
 CREATE INDEX IF NOT EXISTS idx_tokens_token ON tokens(token);
 CREATE INDEX IF NOT EXISTS idx_user_status_user ON user_status(user_id);
-ALTER TABLE user_status ADD COLUMN last_notification_check TIMESTAMP;
+ALTER TABLE user_status
+ADD COLUMN last_match_check TIMESTAMP DEFAULT NULL,
+ADD COLUMN last_message_check TIMESTAMP DEFAULT NULL;
+
 
 -- Add trigger to auto-insert user_status entry when a new user is created
 CREATE OR REPLACE FUNCTION create_user_status_trigger()

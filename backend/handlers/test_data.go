@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log"
 	"math/rand"
 	"net/http"
 	"strconv"
@@ -92,7 +91,7 @@ func GenerateTestDataHandler(db *sql.DB) http.HandlerFunc {
 			// Hash a simple password
 			hashedPassword, err := bcrypt.GenerateFromPassword([]byte("testpass123"), bcrypt.DefaultCost)
 			if err != nil {
-				log.Printf("Error hashing password: %v", err)
+				//log.printf("Error hashing password: %v", err)
 				continue
 			}
 
@@ -103,9 +102,9 @@ func GenerateTestDataHandler(db *sql.DB) http.HandlerFunc {
 				VALUES ($1, $2)
 				RETURNING id
 			`, email, string(hashedPassword)).Scan(&userID)
-			//log.Printf("Test user: %d created", userID)
+			//log.printf("Test user: %d created", userID)
 			if err != nil {
-				log.Printf("Error creating test user: %v", err)
+				//log.printf("Error creating test user: %v", err)
 				continue
 			}
 
@@ -132,7 +131,7 @@ func GenerateTestDataHandler(db *sql.DB) http.HandlerFunc {
 				"/placeholder.svg", // No profile picture for test users
 			)
 			if err != nil {
-				log.Printf("Error creating test profile: %v", err)
+				//log.printf("Error creating test profile: %v", err)
 				continue
 			}
 

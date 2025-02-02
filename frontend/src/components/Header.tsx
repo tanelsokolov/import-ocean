@@ -3,20 +3,18 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { MessageSquare, UserRound, Heart, BellDot } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/api";
-import { Avatar, AvatarImage, AvatarFallback } from "./ui/avatar";
 
 export const Header = () => {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const { toast } = useToast();
   const [ws, setWs] = useState<WebSocket | null>(null);
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [newMatches, setNewMatches] = useState(0);
 
-  // Fetch initial notifications
-  const { data, refetch } = useQuery({
+  // Fetch initial notifications **(Runs only once)** 
+  useQuery({
     queryKey: ["notifications"],
     queryFn: async () => {
       const res = await apiRequest("/api/notifications");
@@ -24,7 +22,6 @@ export const Header = () => {
       setNewMatches(res.newMatches);
       return res;
     },
-    refetchInterval: 100, // Refetch every 30 seconds
   });
 
   // Mark notifications as read
@@ -32,62 +29,51 @@ export const Header = () => {
     mutationFn: () => apiRequest("/api/notifications/mark-read", { method: "POST" }),
     onSuccess: () => {
       setUnreadMessages(0);
-      refetch();
     },
   });
 
   // Establish WebSocket connection
   useEffect(() => {
     const connectWebSocket = () => {
-      try {
-        const token = localStorage.getItem("token");
-        if (!token) {
-          console.error("No token available");
-          return;
-        }
-  
-        const websocket = new WebSocket(`ws://localhost:3000/ws/notifications?token=${token}`);
-  
-        websocket.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            console.log("Received WebSocket message:", data);
-        
-            // Handle both connection and notification messages
-            if (data.type === "notification" || data.type === "message") {
-              queryClient.invalidateQueries({ queryKey: ["notifications"] });
-              
-              // Update local state if the data contains these values
-              if (data.unreadMessages !== undefined) {
-                setUnreadMessages(data.unreadMessages);
-              }
-              if (data.newMatches !== undefined) {
-                setNewMatches(data.newMatches);
-              }
-            }
-          } catch (err) {
-            console.error("Error parsing WebSocket message:", err);
-          }
-        };
-  
-        websocket.onclose = (event) => {
-          console.log("WebSocket closed with code:", event.code);
-          setTimeout(connectWebSocket, 5000);
-        };
-  
-        setWs(websocket);
-      } catch (error) {
-        console.error("WebSocket connection error:", error);
+      const token = localStorage.getItem("token");
+      if (!token) {
+        console.error("No token available");
+        return;
       }
+
+      const websocket = new WebSocket(`ws://localhost:3000/ws/notifications?token=${token}`);
+
+      websocket.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+
+          if (data.type === "notification" || data.type === "message") {
+            // **Update state directly (No polling or refetch)**
+            if (data.unreadMessages !== undefined) {
+              setUnreadMessages(data.unreadMessages);
+            }
+            if (data.newMatches !== undefined) {
+              setNewMatches(data.newMatches);
+            }
+          }
+        } catch (err) {
+          console.error("Error parsing WebSocket message:", err);
+        }
+      };
+
+      websocket.onclose = () => {
+        setTimeout(connectWebSocket, 5000); // Reconnect after 5 seconds if closed
+      };
+
+      setWs(websocket);
     };
-  
+
     connectWebSocket();
-  
+
     return () => {
       ws?.close();
     };
-  }, [queryClient]);
-  
+  }, []);
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -119,10 +105,15 @@ export const Header = () => {
               </span>
             )}
           </Button>
-          <Button variant="ghost" className="flex items-center gap-2 relative" onClick={() => {
-            markNotificationsAsRead.mutate();
-            navigate("/chats");
-          }}>
+          <Button
+            variant="ghost"
+            className="flex items-center gap-2 relative"
+            onClick={async () => {
+              navigate("/chats");
+            //setUnreadMessages(0); // Reset unread messages when clicking on chats
+              await markNotificationsAsRead.mutateAsync();
+            }}
+          >
             {unreadMessages > 0 ? (
               <BellDot className="w-4 h-4 text-red-500" />
             ) : (
@@ -135,6 +126,7 @@ export const Header = () => {
               </span>
             )}
           </Button>
+
           <Button onClick={handleLogout} variant="outline" className="hover:text-match-dark">
             Logout
           </Button>

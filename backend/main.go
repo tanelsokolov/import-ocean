@@ -28,7 +28,7 @@ func UpdateUserStatusMiddleware(db *sql.DB) mux.MiddlewareFunc {
 						last_active = CURRENT_TIMESTAMP
 				`, userID)
 				if err != nil {
-					//log.Printf("Failed to update user status: %v", err)
+					//log.printf("Failed to update user status: %v", err)
 				}
 			}
 
@@ -53,7 +53,7 @@ func updateInactiveUsersStatus(db *sql.DB) {
 				WHERE last_active < NOW() - INTERVAL '1 minute' AND status = 'online'
 			`)
 			if err != nil {
-				log.Printf("Error updating user status: %v", err)
+				//log.printf("Error updating user status: %v", err)
 			}
 		}
 	}
@@ -123,6 +123,7 @@ func main() {
 
 	// Notification routes
 	r.HandleFunc("/api/notifications", handlers.GetNotificationsHandler(db)).Methods("GET", "OPTIONS")
+	r.HandleFunc("/api/notifications/mark-matches-read", handlers.MarkMatchesAsReadHandler(db)).Methods("POST")
 
 	// WebSocket route
 	r.HandleFunc("/ws/chat/{matchId}", handlers.HandleWebSocket(db))
@@ -136,7 +137,7 @@ func main() {
 	// Status routes
 	r.HandleFunc("/api/status/update", handlers.UpdateUserStatusHandler(db)).Methods("POST", "OPTIONS")
 	r.HandleFunc("/api/status/{id}", handlers.GetUserStatusHandler(db)).Methods("GET", "OPTIONS")
-	r.HandleFunc("/api/notifications/mark-read", handlers.MarkNotificationsAsReadHandler(db)).Methods("POST", "OPTIONS")
+	r.HandleFunc("/api/notifications/mark-read", handlers.MarkMessagesAsReadHandler(db)).Methods("POST", "OPTIONS")
 
 	// CORS configuration
 	c := cors.New(cors.Options{

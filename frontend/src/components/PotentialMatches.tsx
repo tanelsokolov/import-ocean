@@ -159,7 +159,7 @@ export const PotentialMatches = () => {
           <SelectValue>
   {matchPreference?.priority
     ? {
-        none: "None",
+        none: "Best match",
         interests: "Interests",
         age: "Age",
         looking_for: "Looking for",

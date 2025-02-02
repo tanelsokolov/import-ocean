@@ -111,7 +111,7 @@ const UserProfile = () => {
               <p className="text-gray-700">{profile.occupation}</p>
             </div>
             <div className="flex justify-end mt-6">
-              <Button onClick={() => navigate(`/chats?user=${userId}`)}>Start Chat</Button>
+              <Button onClick={() => navigate(`/chats?user=${userId}`)}>Open Chat</Button>
             </div>
           </CardContent>
         </Card>
