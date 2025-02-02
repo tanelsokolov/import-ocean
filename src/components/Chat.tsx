@@ -88,22 +88,22 @@ export const Chat = ({ matchId, currentUserId, otherUserName, otherUserPicture }
     };
     
 
-websocket.onmessage = (event) => {
-  const newMessage = JSON.parse(event.data);
-  //console.log('Received message:', newMessage);
-  setLocalMessages(prev => {
-    if (!Array.isArray(prev)) {
-      return [newMessage];
-    }
-    if (prev.some(msg => msg.id === newMessage.id)) {
-      return prev;
-    }
-    return [...prev, newMessage];
-  });
-
-  // Trigger a refetch of notifications when a new message is received
-  queryClient.invalidateQueries({ queryKey: ['notifications'] });
-};
+    websocket.onmessage = (event) => {
+      const newMessage = JSON.parse(event.data);
+      setLocalMessages(prev => {
+        if (!Array.isArray(prev)) {
+          return [newMessage];
+        }
+        if (prev.some(msg => msg.id === newMessage.id)) {
+          return prev;
+        }
+        return [...prev, newMessage];
+      });
+    
+      // Make sure to invalidate both messages and notifications
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      queryClient.invalidateQueries({ queryKey: ['messages', matchId] });
+    };
 
     websocket.onclose = (event) => {
       //console.log("WebSocket connection closed for match:", matchId);

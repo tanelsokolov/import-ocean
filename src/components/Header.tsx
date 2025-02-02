@@ -52,10 +52,18 @@ export const Header = () => {
           try {
             const data = JSON.parse(event.data);
             console.log("Received WebSocket message:", data);
-  
-            if (data.type === "notification") {
-              // Invalidate and refetch notifications when a message arrives
+        
+            // Handle both connection and notification messages
+            if (data.type === "notification" || data.type === "message") {
               queryClient.invalidateQueries({ queryKey: ["notifications"] });
+              
+              // Update local state if the data contains these values
+              if (data.unreadMessages !== undefined) {
+                setUnreadMessages(data.unreadMessages);
+              }
+              if (data.newMatches !== undefined) {
+                setNewMatches(data.newMatches);
+              }
             }
           } catch (err) {
             console.error("Error parsing WebSocket message:", err);

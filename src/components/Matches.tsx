@@ -71,57 +71,51 @@ export const Matches = () => {
       <div>
         <h3 className="text-lg font-semibold mb-4">Connected Matches</h3>
         <div className="space-y-4">
-          {matches && matches.length > 0 ? (
-            matches.map((match) => {
-              const userId = parseInt(JSON.parse(localStorage.getItem("user") || "{}").id);
-              const otherUserId = match.user_id_1 === userId ? match.user_id_2 : match.user_id_1;
+        {matches && matches.length > 0 ? (
+  matches.map((match) => {
+    const userId = parseInt(JSON.parse(localStorage.getItem("user") || "{}").id);
+    const otherUserId = match.user_id_1 === userId ? match.user_id_2 : match.user_id_1;
 
-              return (
-                <Link key={match.id} to={`/profile/${otherUserId}`} className="block">
-                  <Card className="p-4 hover:bg-gray-100 transition">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        {match.other_user_picture && (
-                          <img
-                            src={match.other_user_picture}
-                            alt={match.other_user_name}
-                            className="h-12 w-12 rounded-full object-cover"
-                          />
-                        )}
-                        <div className="flex flex-col">
-                          <span className="font-medium">{match.other_user_name}</span>
-                          <UserStatus userId={otherUserId} />
-                        </div>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            disconnectMutation.mutate(match.id);
-                          }}
-                        >
-                          <UserMinus className="h-4 w-4" />
-                        </Button>
-                        <Link 
-                          to={`/chats`}
-                          className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          Chat
-                        </Link>
-                      </div>
-                    </div>
-                  </Card>
-                </Link>
-              );
-            })
-          ) : (
-            <div className="text-center text-muted-foreground">
-              No matches yet. Keep looking!
+    return (
+      <Card key={match.id} className="p-4 hover:bg-gray-100 transition">
+        <div className="flex items-center justify-between">
+          <Link to={`/profile/${otherUserId}`} className="flex items-center gap-4">
+            {match.other_user_picture && (
+              <img
+                src={match.other_user_picture}
+                alt={match.other_user_name}
+                className="h-12 w-12 rounded-full object-cover"
+              />
+            )}
+            <div className="flex flex-col">
+              <span className="font-medium">{match.other_user_name}</span>
+              <UserStatus userId={otherUserId} />
             </div>
-          )}
+          </Link>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => disconnectMutation.mutate(match.id)}
+            >
+              <UserMinus className="h-4 w-4" />
+            </Button>
+            <Link 
+              to={`/chats`}
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+            >
+              Chat
+            </Link>
+          </div>
+        </div>
+      </Card>
+    );
+  })
+) : (
+  <div className="text-center text-muted-foreground">
+    No matches yet. Keep looking!
+  </div>
+)}
         </div>
       </div>
     </ScrollArea>
